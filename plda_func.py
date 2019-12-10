@@ -79,6 +79,7 @@ def plda(X: torch.Tensor, y: torch.Tensor):
     # Calculate within-class and between-class matrices
     S_w, S_b = scatter_matrices(X, y)
     # Find column eigenvectors W
+    # FIXME this does not depend on PyTorch so we cannot use GPU
     _, W = eigh(S_b.numpy(), S_w.numpy())
     W = torch.tensor(W)
     WT = W.transpose(0, 1)
@@ -93,5 +94,7 @@ def plda(X: torch.Tensor, y: torch.Tensor):
     # Calculate Psi matrix
     nfactorPsi = (n-1) / n
     Psi = torch.clamp(nfactorPsi * (Lambda_b / Lambda_w) - 1/n, 0)
+    # Set m as a column vector
     # Inverse A as it is needed later to compute predictions
-    return m, A.inverse(), Psi
+    # Select Psi's diagonal, as the rest is not needed
+    return m.unsqueeze(1), A.inverse(), Psi.diagonal()
