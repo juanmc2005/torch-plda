@@ -3,6 +3,7 @@ import plda_func
 import warnings
 
 
+# TODO add GPU support
 # TODO add PLDA Scoring for speech processing applications
 class PLDA:
     """
@@ -29,7 +30,7 @@ class PLDA:
         with torch.no_grad():
             self.m, self.inv_A, self.Psi = plda_func.plda(X, y)
             # Update latent space dimension if not specified or not possible
-            n_important_feats = self.Psi.nonzero().sum().item()
+            n_important_feats = (self.Psi > 0).sum().item()
             if self.latent_dim is not None and n_important_feats < self.latent_dim:
                 warnings.warn(f"PLDA identified a latent space dimension of {n_important_feats}, "
                               f"but the user specified {self.latent_dim}. "
@@ -44,12 +45,14 @@ class PLDA:
         """
         Encode a batch of vector examples using the previously fit model
         :param batch: a Float matrix of vectors of size (n, d), where d is the vector dimension
-        :return: an encoding of the batch using only the detected important features
+        :return: the batch's latent representations. A Float matrix of vectors of size (n, latent_d)
         """
         with torch.no_grad():
             if self.latent_idx is None:
                 raise AssertionError('You need to call `fit` before applying the model')
-            # Transposing x because PyTorch uses row vectors by default
+            # Transpose `batch` because PyTorch uses row vectors by default
             u = torch.matmul(self.inv_A, batch.transpose(0, 1) - self.m)
+            # Transpose `u` so we can interpret as (batch_size, d)
+            u = u.transpose(0, 1)
             # Select only valuable dimensions for the latent space
             return torch.index_select(u, 1, self.latent_idx)
