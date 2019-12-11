@@ -71,7 +71,7 @@ def plda(X: torch.Tensor, y: torch.Tensor, device: str):
     S_w, S_b = scatter_matrices(X, y, device)
     # Find column eigenvectors W
     # FIXME this does not depend on PyTorch so we cannot use GPU
-    _, W = eigh(S_b.numpy(), S_w.numpy())
+    _, W = eigh(S_b.cpu().numpy(), S_w.cpu().numpy())
     W = torch.tensor(W).to(device)
     WT = W.transpose(0, 1)
     # Calculate Lambda matrices W^T * S_w/b * W
@@ -89,3 +89,23 @@ def plda(X: torch.Tensor, y: torch.Tensor, device: str):
     # Inverse A as it is needed later to compute predictions
     # Select Psi's diagonal, as the rest is not needed
     return m.unsqueeze(1), A.inverse(), Psi.diagonal()
+
+
+def plda_encode(batch: torch.Tensor, m: torch.Tensor,
+                inv_A: torch.Tensor, latent_feat_idx: torch.Tensor) -> torch.Tensor:
+    """
+    Encode a batch of vectors in the latent space
+    :param batch: a Float matrix of size (B, d), where d is the vector dimension
+    :param m: a Float mean vector of size d, obtained from a fit PLDA model
+    :param inv_A: a Float inversed A matrix of size (d, d), obtained from a fit PLDA model
+    :param latent_feat_idx: a Long vector of size d', indicating the indices of important features of d.
+        d' is the dimension of the latent space
+        the indices must be in ascending order
+    :return: a Float matrix of size (B, d'), the batch vectors in the latent space
+    """
+    # Transpose `batch` because PyTorch uses row vectors by default
+    u = torch.matmul(inv_A, batch.transpose(0, 1) - m)
+    # Transpose `u` so we can interpret as (batch_size, d)
+    u = u.transpose(0, 1)
+    # Select only valuable dimensions for the latent space
+    return torch.index_select(u, 1, latent_feat_idx)

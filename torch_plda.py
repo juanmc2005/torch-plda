@@ -46,16 +46,11 @@ class PLDA:
     def __call__(self, batch) -> torch.Tensor:
         """
         Encode a batch of vector examples using the previously fit model
-        :param batch: a Float matrix of vectors of size (n, d), where d is the vector dimension
-        :return: the batch's latent representations. A Float matrix of vectors of size (n, latent_d)
+        :param batch: a Float matrix of vectors of size (B, d), where d is the vector dimension
+        :return: the batch's latent representations. A Float matrix of vectors of size (B, latent_d)
         """
         with torch.no_grad():
             batch = batch.to(self.device)
             if self.latent_idx is None:
                 raise AssertionError('You need to call `fit` before applying the model')
-            # Transpose `batch` because PyTorch uses row vectors by default
-            u = torch.matmul(self.inv_A, batch.transpose(0, 1) - self.m)
-            # Transpose `u` so we can interpret as (batch_size, d)
-            u = u.transpose(0, 1)
-            # Select only valuable dimensions for the latent space
-            return torch.index_select(u, 1, self.latent_idx)
+            return lib.plda_encode(batch, self.m, self.inv_A, self.latent_idx)
