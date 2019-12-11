@@ -1,26 +1,16 @@
 import torch
 from scipy.linalg import eigh
+import utils
 
 
-def select_class(X: torch.Tensor, y: torch.Tensor, k: int):
-    """
-    Select all vector examples from the training set matrix X that correspond to the class k
-    :param X: a Float matrix of size (N, d), where d is the vector dimension
-    :param y: a Long vector of class labels
-    :param k: the class to select
-    :return: a Float torch.Tensor matrix of size (N_k, d), where N_k is the number of examples of class k
-    """
-    indices = (y == k).nonzero().squeeze(1)
-    return torch.index_select(X, 0, indices)
-
-
-def scatter_matrices(X: torch.Tensor, y: torch.Tensor):
+def scatter_matrices(X: torch.Tensor, y: torch.Tensor, device: str):
     """
     Compute within-class and between-class scatter matrices according to the algorithm described in:
         https://ravisoji.com/assets/papers/ioffe2006probabilistic.pdf
         (Figure 2, p537)
     :param X: a Float matrix of training vectors of size (N, d), where d is the vector dimension
     :param y: a Long vector of class labels
+    :param device: a PyTorch device where to execute the operations
     :return: (S_w, S_b) where:
         S_w is the within-class scatter matrix of size (d, d)
         S_b is the between-class scatter matrix of size (d, d)
@@ -32,11 +22,11 @@ def scatter_matrices(X: torch.Tensor, y: torch.Tensor):
     # Calculate training set mean
     m = torch.mean(X, dim=0)
     # Initialize within-class and between-class scatter matrices to 0
-    S_w, S_b = torch.zeros(d, d), torch.zeros(d, d)
+    S_w, S_b = torch.zeros(d, d).to(device), torch.zeros(d, d).to(device)
     # For every class k
     for k in K:
         # Select x_i such that y_i == k
-        C_k = select_class(X, y, k)
+        C_k = utils.select_class(X, y, k)
         # Number of examples of class k
         n_k = C_k.size(0)
         # Calculate the class mean
@@ -58,13 +48,14 @@ def scatter_matrices(X: torch.Tensor, y: torch.Tensor):
     return S_w, S_b
 
 
-def plda(X: torch.Tensor, y: torch.Tensor):
+def plda(X: torch.Tensor, y: torch.Tensor, device: str):
     """
     Optimizes a PLDA model according to the algorithm described in:
         https://ravisoji.com/assets/papers/ioffe2006probabilistic.pdf
         (Figure 2, p537)
     :param X: a Float matrix of training vectors of size (N, d), where d is the vector dimension
     :param y: a Long vector of class labels
+    :param device: a PyTorch device where to execute the operations
     :return: (m, A^-1, Psi), where:
         m is the mean of x_i vectors
         A^-1 is the inverse of the A diagonal matrix, which we use for predictions
@@ -77,11 +68,11 @@ def plda(X: torch.Tensor, y: torch.Tensor):
     # Calculate training set mean
     m = torch.mean(X, dim=0)
     # Calculate within-class and between-class matrices
-    S_w, S_b = scatter_matrices(X, y)
+    S_w, S_b = scatter_matrices(X, y, device)
     # Find column eigenvectors W
     # FIXME this does not depend on PyTorch so we cannot use GPU
     _, W = eigh(S_b.numpy(), S_w.numpy())
-    W = torch.tensor(W)
+    W = torch.tensor(W).to(device)
     WT = W.transpose(0, 1)
     # Calculate Lambda matrices W^T * S_w/b * W
     Lambda_b = torch.matmul(torch.matmul(WT, S_b), W).diagonal().diag()
@@ -89,11 +80,11 @@ def plda(X: torch.Tensor, y: torch.Tensor):
     # Calculate n
     n = N / K
     # Calculate A matrix
-    nfactorA = n / (n-1)
+    nfactorA = n / (n - 1)
     A = torch.inverse(WT) * ((nfactorA * Lambda_w) ** .5)
     # Calculate Psi matrix
-    nfactorPsi = (n-1) / n
-    Psi = torch.clamp(nfactorPsi * (Lambda_b / Lambda_w) - 1/n, 0)
+    nfactorPsi = (n - 1) / n
+    Psi = torch.clamp(nfactorPsi * (Lambda_b / Lambda_w) - 1 / n, 0)
     # Set m as a column vector
     # Inverse A as it is needed later to compute predictions
     # Select Psi's diagonal, as the rest is not needed
